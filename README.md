@@ -39,16 +39,11 @@ ModelHawk is currently a prototype and should be interpreted as technical guidan
 
 ---
 
-## Live prototype demo
+## Project status
 
-A temporary live prototype may be available here:
+ModelHawk is a portfolio prototype under active hardening. The repository contains the full web application, a bundled demo notebook, screenshots and a sample PDF report.
 
-[Open ModelHawk live demo](https://website-respondents-jaguar-opened.trycloudflare.com)
-
-> **Demo availability note**  
-> This prototype is currently exposed through a temporary Cloudflare Tunnel from my local development machine.  
-> The link only works while my local terminal, Next.js server and tunnel are running.  
-> If the link is offline, the code can still be reviewed and run locally using the instructions below.
+There is **no permanent hosted demo URL advertised here**. Run the application locally using the instructions below. This avoids presenting a temporary development tunnel as a production deployment.
 
 ---
 
@@ -88,7 +83,7 @@ You can test ModelHawk using the sample fraud detection notebook included in thi
 
 Recommended test flow:
 
-1. Open the live prototype or run the project locally.
+1. Run the project locally.
 2. Go to the **Upload Notebook** page.
 3. Upload `credit_card_fraud_detection.ipynb`.
 4. Run the static audit.
@@ -351,8 +346,10 @@ cd modelhawk
 
 ### 2. Install dependencies
 
+Use Node.js **20.9.0 or newer**. The repository includes a lockfile, so a clean install is preferred:
+
 ```bash
-npm install
+npm ci
 ```
 
 ### 3. Start the Next.js development server
@@ -383,7 +380,7 @@ Create a `.env.local` file for local development if you want AI examiner notes.
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 ### Ollama fallback
@@ -427,34 +424,40 @@ Exit with:
 
 ---
 
-## Running the temporary public demo with Cloudflare Tunnel
+## Deployment note
 
-For local demonstration purposes, the app can be exposed temporarily using Cloudflare Tunnel.
+The repository does not treat an ad-hoc development tunnel as a production deployment. If a public deployment is added, it should use a maintained host, HTTPS, request-size limits, rate limiting and the same validation checks used by the local application.
 
-### Terminal 1: run Next.js
+---
 
-```powershell
-cd C:\Users\alber\Projects\modelhawk
-npm.cmd run dev -- -H 127.0.0.1 -p 3000
+## Safety and validation hardening
+
+The current hardening pass adds:
+
+- a 10 MiB notebook upload limit and basic notebook-shape validation
+- explicit separation between probability-score detection and actual threshold tuning
+- leakage heuristics based on executable calls rather than import statements
+- explicit checks for test-set reuse during model/strategy selection and threshold tuning
+- checks for learned preprocessing fitted before cross-validation instead of inside folds
+- detection of hand-weighted composite model-selection scores as review points
+- distinct model-family detection for multi-model claims
+- confidence scoring that depends on absolute evidence as well as score separation
+- bounded AI-provider request sizes, provider timeouts and per-process concurrency limits
+- Gemini API credentials sent in an API-key header rather than the request URL
+- bounded PDF request size, per-process concurrency, `pdflatex` timeout and `-no-shell-escape`
+- baseline HTTP security headers and a disabled framework-identification header
+- deterministic regression tests, including the bundled fraud notebook as a known-risk fixture
+
+Run the local checks with:
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run build
 ```
 
-### Terminal 2: run the tunnel
-
-```powershell
-cloudflared tunnel --url http://127.0.0.1:3000
-```
-
-Cloudflare will generate a temporary public URL.
-
-Important notes:
-
-- the URL is temporary
-- the app is only online while the local machine is running
-- the Next.js dev server must remain open
-- local PDF generation currently requires LaTeX to be installed
-- Ollama is optional if Gemini is configured, but it can be used as a local fallback
-- the tunnel must remain open
-- this setup is intended for prototype demonstration, not production hosting
+Static analysis is intentionally conservative: a detected signal is evidence to review, not proof that the notebook is correct or incorrect.
 
 ---
 
@@ -472,7 +475,6 @@ Current limitations:
 - AI examiner notes improve explanation but do not replace human review
 - Gemini or any external provider may be temporarily unavailable or rate-limited
 - fallback examiner notes should be treated as guidance, not proof of correctness
-- the temporary public demo depends on a local machine and Cloudflare Tunnel
 - PDF generation currently depends on a local LaTeX installation
 
 The generated report should be treated as **technical guidance**, not as a final guarantee of ML quality.
