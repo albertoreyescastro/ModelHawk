@@ -115,8 +115,8 @@ export default function Home() {
           <a href="/upload" className="transition hover:text-white">
             Upload
           </a>
-          <a href="#waitlist" className="transition hover:text-white">
-            Early access
+          <a href="#demo" className="transition hover:text-white">
+            Try it
           </a>
         </div>
 
@@ -436,7 +436,7 @@ export default function Home() {
       </section>
 
       <section
-        id="waitlist"
+        id="final-cta"
         className="relative z-10 mx-auto max-w-4xl px-6 py-24 text-center"
       >
         <div className="mb-8 flex justify-center">
@@ -456,18 +456,23 @@ export default function Home() {
         </h2>
 
         <p className="mx-auto mt-5 max-w-2xl text-slate-300">
-          Join the early access list for students, Kaggle beginners, bootcamp
-          students and junior ML/data applicants.
+          Run the deterministic notebook audit, inspect the evidence, and use the
+          examiner layer as guidance rather than proof of correctness.
         </p>
 
-        <div className="mx-auto mt-8 flex max-w-xl flex-col gap-3 rounded-[2rem] border border-white/10 bg-white/[0.06] p-2 sm:flex-row sm:rounded-full">
-          <input
-            placeholder="Enter your email"
-            className="flex-1 bg-transparent px-5 py-3 text-white outline-none placeholder:text-slate-500"
-          />
-          <button className="rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 px-7 py-3 font-bold text-[#020817] transition hover:scale-105">
-            Join waitlist
-          </button>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <a
+            href="/upload"
+            className="rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 px-7 py-3 font-bold text-[#020817] transition hover:scale-105"
+          >
+            Audit a notebook
+          </a>
+          <a
+            href="/demo"
+            className="rounded-full border border-white/15 bg-white/[0.06] px-7 py-3 font-bold text-white transition hover:bg-white/[0.1]"
+          >
+            View sample audit
+          </a>
         </div>
       </section>
 
