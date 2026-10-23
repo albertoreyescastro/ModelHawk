@@ -21,10 +21,10 @@ const checks = [
     label: "Scoring",
   },
   {
-    title: "AI Defense Report",
+    title: "Controlled Examiner Report",
     description:
-      "Use AI to explain the findings, generate viva questions and turn the audit into clear portfolio-ready feedback.",
-    label: "AI layer",
+      "Use a controlled examiner layer — AI-assisted when configured — to explain findings, generate viva questions and turn the audit into clear portfolio-ready feedback.",
+    label: "Examiner layer",
   },
 ];
 
@@ -162,8 +162,8 @@ export default function Home() {
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-400">
             ModelHawk does not simply ask an AI to “review your notebook”. It
             first extracts objective signals from your project, runs targeted ML
-            checks, scores the risks and then uses AI to explain the findings
-            clearly.
+            checks, scores the risks and then uses a controlled examiner layer
+            to explain the findings, with external AI only when configured.
           </p>
 
           <div className="mt-9 flex flex-col gap-4 sm:flex-row">
@@ -206,15 +206,15 @@ export default function Home() {
               </div>
 
               <div className="rounded-full bg-orange-500/15 px-4 py-2 text-sm font-semibold text-orange-300">
-                Medium-high risk
+                High leakage risk
               </div>
             </div>
 
             <div className="grid gap-4">
-              <AuditRow label="Leakage risk" value={72} />
-              <AuditRow label="Metric quality" value={64} />
-              <AuditRow label="Reproducibility" value={58} />
-              <AuditRow label="Portfolio readiness" value={81} />
+              <AuditRow label="Leakage risk" value={75} />
+              <AuditRow label="Metric quality" value={76} />
+              <AuditRow label="Reproducibility" value={90} />
+              <AuditRow label="Portfolio readiness" value={79} />
             </div>
 
             <div className="mt-6 rounded-2xl border border-blue-400/20 bg-blue-500/10 p-4">
@@ -222,9 +222,9 @@ export default function Home() {
                 Hawk finding
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                Accuracy is reported as a main metric, but the dataset appears
-                imbalanced. Add recall, precision, F1, PR-AUC and threshold
-                justification.
+                Multiple candidate model families appear to be evaluated on
+                held-out test data before final selection. Keep the test set
+                reserved for one final unbiased evaluation.
               </p>
             </div>
 
@@ -244,16 +244,16 @@ export default function Home() {
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
                 <span className="rounded-full bg-blue-500/10 px-3 py-1">
-                  uses accuracy
+                  test-set selection risk
                 </span>
                 <span className="rounded-full bg-blue-500/10 px-3 py-1">
-                  no threshold tuning
+                  test-set threshold tuning risk
                 </span>
                 <span className="rounded-full bg-blue-500/10 px-3 py-1">
-                  imbalanced problem
+                  preprocessing outside CV risk
                 </span>
                 <span className="rounded-full bg-blue-500/10 px-3 py-1">
-                  weak reproducibility
+                  custom composite score
                 </span>
               </div>
             </div>

@@ -58,7 +58,7 @@ Useful routes:
 - `/upload` — notebook upload workflow
 - `/api/health` — deployment health and revision endpoint
 
-The public instance currently runs on Render's free web-service tier. It can spin down after inactivity, so the first request after an idle period may be noticeably slower. The application itself is containerised and the same Docker image is exercised in CI before merge. Render is configured to deploy from `main` only after the GitHub checks pass.
+The public instance currently runs on Render's free web-service tier. It can spin down after inactivity, so the first request after an idle period may briefly show Render's loading screen while the service wakes. The application itself is containerised and the same Docker image is exercised in CI before merge. Render is configured to deploy from `main` only after the GitHub checks pass.
 
 The public deployment does not require a hosted AI-provider key. If no external provider is configured, the examiner layer uses the deterministic fallback path.
 
