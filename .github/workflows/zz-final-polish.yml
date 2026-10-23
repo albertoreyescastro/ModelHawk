@@ -1,0 +1,128 @@
+name: One-off final consistency polish
+
+on:
+  push:
+    branches:
+      - polish/final-consistency-20261023
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: polish/final-consistency-20261023
+
+      - name: Apply final recruiter and reliability polish
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new, expected=1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} occurrence(s), found {count}: {old!r}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          # Landing: align the visual sample and examiner wording with the live deterministic fixture.
+          replace_exact('app/page.tsx', 'title: "AI Defense Report",', 'title: "Controlled Examiner Report",')
+          replace_exact('app/page.tsx', 'label: "AI layer",', 'label: "Examiner layer",')
+          replace_exact(
+              'app/page.tsx',
+              '      "Use AI to explain the findings, generate viva questions and turn the audit into clear portfolio-ready feedback.",',
+              '      "Use a controlled examiner layer — AI-assisted when configured — to explain findings, generate viva questions and turn the audit into clear portfolio-ready feedback.",'
+          )
+          replace_exact(
+              'app/page.tsx',
+              '            checks, scores the risks and then uses AI to explain the findings\n            clearly.',
+              '            checks, scores the risks and then uses a controlled examiner layer\n            to explain the findings, with external AI only when configured.'
+          )
+          replace_exact('app/page.tsx', 'Medium-high risk', 'High leakage risk')
+          replace_exact('app/page.tsx', '<AuditRow label="Leakage risk" value={72} />', '<AuditRow label="Leakage risk" value={75} />')
+          replace_exact('app/page.tsx', '<AuditRow label="Metric quality" value={64} />', '<AuditRow label="Metric quality" value={76} />')
+          replace_exact('app/page.tsx', '<AuditRow label="Reproducibility" value={58} />', '<AuditRow label="Reproducibility" value={90} />')
+          replace_exact('app/page.tsx', '<AuditRow label="Portfolio readiness" value={81} />', '<AuditRow label="Portfolio readiness" value={79} />')
+          replace_exact(
+              'app/page.tsx',
+              '                Accuracy is reported as a main metric, but the dataset appears\n                imbalanced. Add recall, precision, F1, PR-AUC and threshold\n                justification.',
+              '                Multiple candidate model families appear to be evaluated on\n                held-out test data before final selection. Keep the test set\n                reserved for one final unbiased evaluation.'
+          )
+          replace_exact('app/page.tsx', '                  uses accuracy', '                  test-set selection risk')
+          replace_exact('app/page.tsx', '                  no threshold tuning', '                  test-set threshold tuning risk')
+          replace_exact('app/page.tsx', '                  imbalanced problem', '                  preprocessing outside CV risk')
+          replace_exact('app/page.tsx', '                  weak reproducibility', '                  custom composite score')
+
+          # Demo: remove the stale promise about a future PDF replacement.
+          replace_exact(
+              'app/demo/page.tsx',
+              '              The previous sample PDF has been removed from this page because it\n              was generated before the hardened audit rules. A replacement will\n              only be published after it is regenerated from the current engine.',
+              '              PDF reports are generated on demand from the current deterministic\n              audit result, so exported reports stay aligned with the hardened\n              rules used by the live application.'
+          )
+
+          # Upload: accurately describe deterministic fallback when no provider is configured.
+          replace_exact('app/upload/page.tsx', 'Static audit + AI examiner', 'Static audit + controlled examiner')
+          replace_exact(
+              'app/upload/page.tsx',
+              '            technical audit checks and then uses an AI examiner layer to\n            generate richer project-specific explanations.',
+              '            technical audit checks and then uses a controlled examiner layer to\n            generate richer project-specific explanations, with external AI only\n            when a provider is configured.'
+          )
+          replace_exact(
+              'app/upload/page.tsx',
+              '<InfoBox text="The AI examiner notes are generated by the configured AI provider using the audit result as evidence." />',
+              '<InfoBox text="Examiner notes are grounded in the audit result. If no external AI provider is configured, ModelHawk uses its deterministic fallback examiner." />'
+          )
+          replace_exact(
+              'app/upload/page.tsx',
+              '              technical signals, generate risk scores and add AI examiner\n              notes.',
+              '              technical signals, generate risk scores and add controlled\n              examiner notes.'
+          )
+          replace_exact('app/upload/page.tsx', '"Generating AI examiner notes..."', '"Generating examiner notes..."')
+
+          # SEO/social metadata: align the live site with the recruiter-facing repository description.
+          Path('app/layout.tsx').write_text('''import type { Metadata } from "next";\nimport "./globals.css";\n\nconst description =\n  "Static ML notebook auditing with deterministic methodology checks, AI-assisted review and production PDF reports.";\n\nexport const metadata: Metadata = {\n  metadataBase: new URL("https://modelhawk.onrender.com"),\n  title: {\n    default: "ModelHawk | Static ML Notebook Auditor",\n    template: "%s | ModelHawk",\n  },\n  description,\n  applicationName: "ModelHawk",\n  keywords: [\n    "machine learning",\n    "ML audit",\n    "Jupyter notebook",\n    "model evaluation",\n    "data leakage",\n    "reproducibility",\n  ],\n  authors: [{ name: "Alberto Reyes Castro" }],\n  creator: "Alberto Reyes Castro",\n  openGraph: {\n    type: "website",\n    url: "/",\n    title: "ModelHawk | Static ML Notebook Auditor",\n    description,\n    siteName: "ModelHawk",\n    images: [\n      {\n        url: "/docs/screenshots/01-landing-page.png",\n        width: 1440,\n        height: 1000,\n        alt: "ModelHawk static ML notebook auditor",\n      },\n    ],\n  },\n  twitter: {\n    card: "summary_large_image",\n    title: "ModelHawk | Static ML Notebook Auditor",\n    description,\n    images: ["/docs/screenshots/01-landing-page.png"],\n  },\n  icons: {\n    icon: "/modelhawk-favicon.png",\n  },\n};\n\nexport default function RootLayout({\n  children,\n}: Readonly<{\n  children: React.ReactNode;\n}>) {\n  return (\n    <html lang="en">\n      <body>{children}</body>\n    </html>\n  );\n}\n''', encoding='utf-8')
+
+          # Low-risk production security headers. CSP remains compatible with Next's inline bootstrap/styles.
+          Path('next.config.ts').write_text('''import type { NextConfig } from "next";\n\nconst CONTENT_SECURITY_POLICY = [\n  "default-src 'self'",\n  "base-uri 'self'",\n  "form-action 'self'",\n  "frame-ancestors 'none'",\n  "object-src 'none'",\n  "img-src 'self' data: blob:",\n  "font-src 'self' data:",\n  "style-src 'self' 'unsafe-inline'",\n  "script-src 'self' 'unsafe-inline'",\n  "connect-src 'self'",\n  "worker-src 'self' blob:",\n  "manifest-src 'self'",\n  "upgrade-insecure-requests",\n].join("; ");\n\nconst SECURITY_HEADERS = [\n  { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },\n  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },\n  { key: "X-Content-Type-Options", value: "nosniff" },\n  { key: "X-Frame-Options", value: "DENY" },\n  { key: "X-DNS-Prefetch-Control", value: "off" },\n  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },\n  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },\n  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },\n  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },\n];\n\nconst nextConfig: NextConfig = {\n  output: "standalone",\n  poweredByHeader: false,\n  async headers() {\n    return [\n      {\n        source: "/(.*)",\n        headers: SECURITY_HEADERS,\n      },\n    ];\n  },\n};\n\nexport default nextConfig;\n''', encoding='utf-8')
+
+          # README: accurately describe the free-tier wake-up UX.
+          replace_exact(
+              'README.md',
+              "The public instance currently runs on Render's free web-service tier. It can spin down after inactivity, so the first request after an idle period may be noticeably slower. The application itself is containerised and the same Docker image is exercised in CI before merge. Render is configured to deploy from `main` only after the GitHub checks pass.",
+              "The public instance currently runs on Render's free web-service tier. It can spin down after inactivity, so the first request after an idle period may briefly show Render's loading screen while the service wakes. The application itself is containerised and the same Docker image is exercised in CI before merge. Render is configured to deploy from `main` only after the GitHub checks pass."
+          )
+
+          # Add cheap regression coverage for recruiter-facing consistency and security configuration.
+          Path('tests/presentation-consistency.test.mjs').write_text('''import test from "node:test";\nimport assert from "node:assert/strict";\nimport { readFile } from "node:fs/promises";\n\nasync function source(path) {\n  return readFile(new URL(`../${path}`, import.meta.url), "utf8");\n}\n\ntest("landing sample mirrors the bundled deterministic fixture", async () => {\n  const page = await source("app/page.tsx");\n  assert.match(page, /Leakage risk" value=\\{75\\}/);\n  assert.match(page, /Metric quality" value=\\{76\\}/);\n  assert.match(page, /Reproducibility" value=\\{90\\}/);\n  assert.match(page, /Portfolio readiness" value=\\{79\\}/);\n  assert.match(page, /test-set selection risk/);\n  assert.match(page, /test-set threshold tuning risk/);\n});\n\ntest("demo and upload describe the current PDF and examiner behavior", async () => {\n  const demo = await source("app/demo/page.tsx");\n  const upload = await source("app/upload/page.tsx");\n  assert.doesNotMatch(demo, /A replacement will only be published/);\n  assert.match(demo, /PDF reports are generated on demand/);\n  assert.match(upload, /deterministic fallback examiner/);\n  assert.match(upload, /external AI only/);\n});\n\ntest("site metadata and security headers stay recruiter-ready", async () => {\n  const layout = await source("app/layout.tsx");\n  const config = await source("next.config.ts");\n  assert.match(layout, /Static ML notebook auditing with deterministic methodology checks/);\n  assert.match(layout, /openGraph/);\n  assert.match(layout, /summary_large_image/);\n  assert.match(config, /Content-Security-Policy/);\n  assert.match(config, /Strict-Transport-Security/);\n  assert.match(config, /frame-ancestors 'none'/);\n});\n''', encoding='utf-8')
+
+          # CI: exercise deterministic examiner, PDF with narrative, negative API contracts and runtime security headers.
+          ci = Path('.github/workflows/ci.yml')
+          text = ci.read_text(encoding='utf-8')
+          old = """          with open('/tmp/modelhawk-pdf-payload.json', 'w', encoding='utf-8') as handle:\n              json.dump({'auditResult': audit}, handle)\n          PY\n\n          curl --fail --silent --show-error \\\n"""
+          new = """          PY\n\n          curl --fail --silent --show-error \\\n            -H 'Content-Type: application/json' \\\n            --data-binary @/tmp/modelhawk-audit.json \\\n            http://127.0.0.1:3000/api/audit/ai \\\n            -o /tmp/modelhawk-ai.json\n\n          python - <<'PY'\n          import json\n\n          with open('/tmp/modelhawk-audit.json', encoding='utf-8') as handle:\n              audit = json.load(handle)\n          with open('/tmp/modelhawk-ai.json', encoding='utf-8') as handle:\n              examiner = json.load(handle)\n\n          if examiner.get('provider') != 'deterministic':\n              raise SystemExit(f\"Expected deterministic CI examiner, got {examiner.get('provider')}\")\n\n          narrative = examiner.get('aiNarrative')\n          required = {\n              'executiveSummary', 'technicalAssessment', 'riskInterpretation',\n              'portfolioVerdict', 'improvedRecommendations', 'suggestedMarkdownCells',\n              'vivaAnswers', 'limitations',\n          }\n          if not isinstance(narrative, dict) or not required.issubset(narrative):\n              raise SystemExit('Examiner endpoint returned an incomplete controlled narrative')\n\n          if len(narrative.get('vivaAnswers', [])) != len(audit.get('vivaQuestions', [])):\n              raise SystemExit('Examiner did not preserve one answer per deterministic viva question')\n\n          with open('/tmp/modelhawk-pdf-payload.json', 'w', encoding='utf-8') as handle:\n              json.dump({'auditResult': audit, 'aiNarrative': narrative}, handle)\n          PY\n\n          curl --fail --silent --show-error \\\n"""
+          if text.count(old) != 1:
+              raise SystemExit('CI examiner insertion point changed unexpectedly')
+          text = text.replace(old, new)
+
+          old = """          print(f'PDF smoke test passed: {len(report)} bytes')\n          PY\n\n      - name: Show container logs on failure\n"""
+          new = """          print(f'PDF smoke test passed: {len(report)} bytes')\n          PY\n\n          printf 'not a notebook' >/tmp/modelhawk-invalid.txt\n          status=$(curl --silent --show-error -o /tmp/modelhawk-invalid-audit.json -w '%{http_code}' \\\n            -F \"file=@/tmp/modelhawk-invalid.txt;filename=invalid.txt\" \\\n            http://127.0.0.1:3000/api/audit)\n          test \"$status\" = \"400\"\n          grep -q 'Please upload a .ipynb notebook file.' /tmp/modelhawk-invalid-audit.json\n\n          status=$(curl --silent --show-error -o /tmp/modelhawk-invalid-ai.json -w '%{http_code}' \\\n            -H 'Content-Type: application/json' \\\n            --data '{\"fileName\":\"invalid.ipynb\",\"scores\":{\"leakageRisk\":999,\"metricQuality\":1,\"reproducibility\":1,\"portfolioReadiness\":1}}' \\\n            http://127.0.0.1:3000/api/audit/ai)\n          test \"$status\" = \"400\"\n\n          status=$(curl --silent --show-error -o /tmp/modelhawk-invalid-pdf.json -w '%{http_code}' \\\n            -H 'Content-Type: application/json' \\\n            --data '{\"fileName\":\"invalid.ipynb\"}' \\\n            http://127.0.0.1:3000/api/report/pdf)\n          test \"$status\" = \"400\"\n\n      - name: Verify runtime security headers\n        shell: bash\n        run: |\n          set -euo pipefail\n          curl --silent --show-error --head http://127.0.0.1:3000/ >/tmp/modelhawk-headers.txt\n          grep -qi '^content-security-policy:' /tmp/modelhawk-headers.txt\n          grep -qi '^strict-transport-security:' /tmp/modelhawk-headers.txt\n          grep -qi '^x-content-type-options: nosniff' /tmp/modelhawk-headers.txt\n          grep -qi '^x-frame-options: DENY' /tmp/modelhawk-headers.txt\n\n      - name: Show container logs on failure\n"""
+          if text.count(old) != 1:
+              raise SystemExit('CI negative-contract insertion point changed unexpectedly')
+          ci.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Remove one-off workflow and commit final files
+        shell: bash
+        run: |
+          rm .github/workflows/zz-final-polish.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/demo/page.tsx app/upload/page.tsx app/layout.tsx next.config.ts README.md tests/presentation-consistency.test.mjs .github/workflows/ci.yml .github/workflows/zz-final-polish.yml
+          git commit -m "Finish ModelHawk recruiter and reliability polish"
+          git push origin HEAD:polish/final-consistency-20261023
