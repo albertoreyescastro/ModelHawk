@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 const scoreCards = [
   {
@@ -182,7 +183,7 @@ export default function DemoPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_right,#1677FF33,transparent_35%),radial-gradient(circle_at_20%_20%,#5EEBFF22,transparent_30%),linear-gradient(180deg,#020817_0%,#061126_50%,#020817_100%)]" />
 
       <nav className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-6">
-        <a href="/" className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-lg shadow-blue-500/25">
             <Image
               src="/modelhawk-icon.png"
@@ -202,7 +203,7 @@ export default function DemoPage() {
               Sample Audit
             </p>
           </div>
-        </a>
+        </Link>
 
         <div className="flex items-center gap-3">
           <a
@@ -212,12 +213,12 @@ export default function DemoPage() {
             Run your own audit
           </a>
 
-          <a
+          <Link
             href="/"
             className="rounded-full border border-blue-400/40 px-5 py-2 text-sm font-medium text-blue-100 transition hover:border-blue-300 hover:bg-blue-500/10"
           >
             Back home
-          </a>
+          </Link>
         </div>
       </nav>
 
@@ -450,12 +451,12 @@ export default function DemoPage() {
               Run an audit
             </a>
 
-            <a
+            <Link
               href="/"
               className="rounded-full border border-blue-400/40 px-7 py-3 text-sm font-bold text-blue-100 transition hover:bg-blue-500/10"
             >
               Back to landing page
-            </a>
+            </Link>
           </div>
         </section>
       </section>

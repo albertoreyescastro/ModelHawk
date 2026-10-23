@@ -1,4 +1,15 @@
 import { NextResponse } from "next/server";
+import {
+  computeTaskConfidence,
+  detectModelFamilies,
+  detectCustomCompositeScore,
+  detectPreprocessingOutsideCrossValidationRisk,
+  detectScalerBeforeSplit,
+  detectSmoteBeforeSplit,
+  detectTestSetSelectionRisk,
+  detectTestSetThresholdTuningRisk,
+  detectThresholdTuning,
+} from "@/lib/audit-heuristics.mjs";
 
 export const runtime = "nodejs";
 
@@ -28,14 +39,6 @@ function includesAny(text: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
-function firstIndexOfAny(text: string, patterns: string[]) {
-  const indices = patterns
-    .map((pattern) => text.indexOf(pattern))
-    .filter((index) => index >= 0);
-
-  return indices.length > 0 ? Math.min(...indices) : -1;
-}
-
 function clampScore(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
@@ -48,15 +51,6 @@ function confidenceLabel(value: number) {
   if (value >= 80) return "High";
   if (value >= 55) return "Medium";
   return "Low";
-}
-
-function computeConfidence(bestScore: number, secondScore: number) {
-  if (bestScore <= 1) return 35;
-
-  const separation = bestScore - secondScore;
-  const confidence = 55 + (separation / Math.max(bestScore, 1)) * 40;
-
-  return clampScore(confidence, 35, 95);
 }
 
 function pickBest(scores: Record<string, number>) {
@@ -82,8 +76,26 @@ function addFinding(
   findings.push({ severity, title, text });
 }
 
+const MAX_NOTEBOOK_BYTES = 10 * 1024 * 1024;
+const MAX_MULTIPART_BYTES = MAX_NOTEBOOK_BYTES + 512 * 1024;
+
 export async function POST(request: Request) {
   try {
+    const contentLengthHeader = request.headers.get("content-length");
+    const contentLength = Number(contentLengthHeader || "0");
+    if (!contentLengthHeader || !Number.isFinite(contentLength) || contentLength <= 0) {
+      return NextResponse.json(
+        { error: "A valid Content-Length header is required for notebook uploads." },
+        { status: 411 }
+      );
+    }
+    if (contentLength > MAX_MULTIPART_BYTES) {
+      return NextResponse.json(
+        { error: "Notebook upload is too large. Maximum size is 10 MiB." },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -94,7 +106,14 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!file.name.endsWith(".ipynb")) {
+    if (file.size > MAX_NOTEBOOK_BYTES) {
+      return NextResponse.json(
+        { error: "Notebook upload is too large. Maximum size is 10 MiB." },
+        { status: 413 }
+      );
+    }
+
+    if (!file.name.toLowerCase().endsWith(".ipynb")) {
       return NextResponse.json(
         { error: "Please upload a .ipynb notebook file." },
         { status: 400 }
@@ -102,7 +121,22 @@ export async function POST(request: Request) {
     }
 
     const text = await file.text();
-    const notebook = JSON.parse(text);
+    let notebook: { cells?: unknown };
+    try {
+      notebook = JSON.parse(text) as { cells?: unknown };
+    } catch {
+      return NextResponse.json(
+        { error: "The uploaded file is not valid notebook JSON." },
+        { status: 400 }
+      );
+    }
+
+    if (!notebook || typeof notebook !== "object" || !Array.isArray(notebook.cells)) {
+      return NextResponse.json(
+        { error: "Invalid notebook structure: expected a cells array." },
+        { status: 400 }
+      );
+    }
 
     const cells: NotebookCell[] = Array.isArray(notebook.cells)
       ? notebook.cells
@@ -110,8 +144,9 @@ export async function POST(request: Request) {
 
     const codeCells = cells.filter((cell) => cell.cell_type === "code");
     const markdownCells = cells.filter((cell) => cell.cell_type === "markdown");
+    const codeCellSources = codeCells.map((cell) => sourceToString(cell.source));
 
-    const code = codeCells.map((cell) => sourceToString(cell.source)).join("\n");
+    const code = codeCellSources.join("\n");
     const markdown = markdownCells
       .map((cell) => sourceToString(cell.source))
       .join("\n");
@@ -120,19 +155,8 @@ export async function POST(request: Request) {
     const lowerMarkdown = markdown.toLowerCase();
     const lowerAll = `${lowerCode}\n${lowerMarkdown}`;
 
-    const trainTestSplitIndex = lowerCode.indexOf("train_test_split");
-    const smoteIndex = lowerCode.indexOf("smote");
-    const fitResampleIndex = lowerCode.indexOf("fit_resample");
-    const fitTransformIndex = lowerCode.indexOf("fit_transform");
-
-    const scalerIndex = firstIndexOfAny(lowerCode, [
-      "standardscaler",
-      "minmaxscaler",
-      "robustscaler",
-      "normalizer",
-    ]);
-
-    const usesTrainTestSplit = trainTestSplitIndex >= 0;
+    const smoteSignals = detectSmoteBeforeSplit(code);
+    const usesTrainTestSplit = smoteSignals.usesTrainTestSplit;
 
     const usesTrainValidationSplit = includesAny(lowerCode, [
       /validation_split/,
@@ -144,20 +168,9 @@ export async function POST(request: Request) {
       /val_size/,
     ]);
 
-    const usesSmote = smoteIndex >= 0 || fitResampleIndex >= 0;
-
-    const smoteBeforeSplit =
-      usesSmote &&
-      usesTrainTestSplit &&
-      Math.min(
-        ...[smoteIndex, fitResampleIndex].filter((index) => index >= 0)
-      ) < trainTestSplitIndex;
-
-    const scalerBeforeSplit =
-      usesTrainTestSplit &&
-      fitTransformIndex >= 0 &&
-      scalerIndex >= 0 &&
-      fitTransformIndex < trainTestSplitIndex;
+    const usesSmote = smoteSignals.usesSmote;
+    const smoteBeforeSplit = smoteSignals.smoteBeforeSplit;
+    const scalerBeforeSplit = detectScalerBeforeSplit(code);
 
     const usesAccuracy = includesAny(lowerCode, [
       /accuracy_score/,
@@ -191,11 +204,18 @@ export async function POST(request: Request) {
       /pr-auc/,
     ]);
 
-    const usesThresholdTuning = includesAny(lowerCode, [
-      /threshold/,
+    const usesProbabilityScores = includesAny(lowerCode, [
       /predict_proba/,
       /decision_function/,
     ]);
+    const usesThresholdTuning = detectThresholdTuning(code);
+    const testSetSelectionRisk = detectTestSetSelectionRisk(code);
+    const testSetThresholdTuningRisk = codeCellSources.some((cellCode) =>
+      detectTestSetThresholdTuningRisk(cellCode)
+    );
+    const preprocessingOutsideCrossValidationRisk =
+      detectPreprocessingOutsideCrossValidationRisk(code);
+    const usesCustomCompositeScore = detectCustomCompositeScore(code);
 
     const usesRandomState = includesAny(lowerCode, [
       /random_state/,
@@ -502,18 +522,8 @@ export async function POST(request: Request) {
       /\.h5/,
     ]);
 
-    const usesMultipleModels =
-      [
-        usesClassificationModel,
-        usesRegressionModel,
-        includesAny(lowerCode, [
-          /\bxgb/,
-          /randomforest/,
-          /\bsvm\b/,
-          /logisticregression/,
-          /linearregression/,
-        ]),
-      ].filter(Boolean).length >= 2;
+    const detectedModelFamilies = detectModelFamilies(code);
+    const usesMultipleModels = detectedModelFamilies.length >= 2;
 
     const hasStrongImbalanceMetrics =
       usesPrauc || usesPrecisionRecallF1 || usesClassificationReport;
@@ -557,7 +567,7 @@ export async function POST(request: Request) {
 
     const taskPick = pickBest(taskScores);
     const primaryTask = taskPick.label;
-    const taskConfidence = computeConfidence(
+    const taskConfidence = computeTaskConfidence(
       taskPick.score,
       taskPick.secondScore
     );
@@ -660,6 +670,9 @@ export async function POST(request: Request) {
 
     if (smoteBeforeSplit) leakageRisk += 38;
     if (scalerBeforeSplit) leakageRisk += 28;
+    if (testSetSelectionRisk) leakageRisk += 32;
+    if (testSetThresholdTuningRisk) leakageRisk += 18;
+    if (preprocessingOutsideCrossValidationRisk) leakageRisk += 22;
     if (usesSmote && !usesPipeline) leakageRisk += 5;
     if (randomSplitOnTimeSeries) leakageRisk += 25;
     if (usesPipeline) leakageRisk -= 8;
@@ -748,6 +761,9 @@ export async function POST(request: Request) {
 
     if (usesBaseline) metricQuality += 5;
     if (usesMultipleModels) metricQuality += 5;
+    if (testSetSelectionRisk) metricQuality -= 15;
+    if (testSetThresholdTuningRisk) metricQuality -= 8;
+    if (preprocessingOutsideCrossValidationRisk) metricQuality -= 8;
 
     metricQuality = clampScore(metricQuality, 15, 92);
 
@@ -776,6 +792,9 @@ export async function POST(request: Request) {
     if (usesModelPersistence) portfolioReadiness += 3;
     if (acknowledgesAccuracyLimitation) portfolioReadiness += 3;
     if (discussesResamplingSafety) portfolioReadiness += 3;
+    if (testSetSelectionRisk) portfolioReadiness -= 12;
+    if (testSetThresholdTuningRisk) portfolioReadiness -= 6;
+    if (preprocessingOutsideCrossValidationRisk) portfolioReadiness -= 6;
 
     portfolioReadiness = clampScore(portfolioReadiness, 15, 92);
 
@@ -805,6 +824,42 @@ export async function POST(request: Request) {
         "High",
         "Possible temporal leakage from random splitting",
         "The project appears to contain time-series or forecasting signals, but also uses train_test_split. Time-dependent projects usually require chronological splits or backtesting."
+      );
+    }
+
+    if (testSetSelectionRisk) {
+      addFinding(
+        findings,
+        "High",
+        "Possible test-set reuse for model or strategy selection",
+        "Multiple candidate model families appear to be evaluated on test-set data and then ranked or shortlisted. Model and preprocessing choices should normally be made using training/validation data, with the test set opened only for final evaluation."
+      );
+    }
+
+    if (testSetThresholdTuningRisk) {
+      addFinding(
+        findings,
+        "High",
+        "Threshold exploration appears to use the test set",
+        "A threshold grid or loop appears to be scored against y_test. Decision thresholds should normally be selected on validation or out-of-fold predictions so the held-out test set remains unbiased."
+      );
+    }
+
+    if (preprocessingOutsideCrossValidationRisk) {
+      addFinding(
+        findings,
+        "High",
+        "Preprocessing appears to be fitted before cross-validation",
+        "A transformed training matrix appears to be created with fit_transform before being passed into cross-validation. Fold-specific preprocessing should normally be fitted inside a Pipeline so validation folds do not influence preprocessing parameters."
+      );
+    }
+
+    if (usesCustomCompositeScore) {
+      addFinding(
+        findings,
+        "Medium",
+        "Custom weighted model-selection score should be justified",
+        "A hand-weighted composite score appears to be used for ranking. Its weights and cut-offs should be justified from the project objective and should not be chosen from held-out test performance."
       );
     }
 
@@ -990,8 +1045,8 @@ export async function POST(request: Request) {
       usesPrecisionRecallF1
         ? "Precision, recall or F1-style evaluation detected."
         : "",
-      usesThresholdTuning
-        ? "Threshold or probability-based decision logic detected."
+      usesThresholdTuning && !testSetThresholdTuningRisk
+        ? "Threshold decision logic detected without a same-cell test-set tuning signal."
         : "",
       usesHyperparameterSearch ? "Hyperparameter search detected." : "",
       usesBaseline ? "Baseline comparison signal detected." : "",
@@ -1010,6 +1065,18 @@ export async function POST(request: Request) {
     ]);
 
     const risksToVerify = unique([
+      testSetSelectionRisk
+        ? "Verify that model, preprocessing and strategy selection are based on training/validation evidence rather than test-set performance."
+        : "",
+      testSetThresholdTuningRisk
+        ? "Verify that the decision threshold is selected on validation or out-of-fold predictions, not on y_test."
+        : "",
+      preprocessingOutsideCrossValidationRisk
+        ? "Verify that scalers and other learned preprocessing are fitted inside each cross-validation fold, ideally through a Pipeline."
+        : "",
+      usesCustomCompositeScore
+        ? "Verify that any custom weighted ranking score and cut-offs are justified independently of held-out test results."
+        : "",
       usesSmote && !smoteBeforeSplit
         ? "Verify that SMOTE/resampling is applied only to the training data in every experiment and cross-validation workflow."
         : "",
@@ -1037,6 +1104,15 @@ export async function POST(request: Request) {
     ]);
 
     const priorityFixes = unique([
+      testSetSelectionRisk
+        ? "Reserve the test set for one final evaluation; move model and preprocessing selection to validation or nested/out-of-fold evaluation."
+        : "",
+      testSetThresholdTuningRisk
+        ? "Tune decision thresholds on validation or out-of-fold predictions and keep test labels out of threshold selection."
+        : "",
+      preprocessingOutsideCrossValidationRisk
+        ? "Move learned preprocessing into a Pipeline so it is fitted independently inside each cross-validation fold."
+        : "",
       smoteBeforeSplit || scalerBeforeSplit
         ? "Move preprocessing/resampling inside the training workflow and rerun evaluation."
         : "",
@@ -1199,7 +1275,12 @@ export async function POST(request: Request) {
         usesPrecisionRecallF1,
         usesRocAuc,
         usesPrauc,
+        usesProbabilityScores,
         usesThresholdTuning,
+        testSetSelectionRisk,
+        testSetThresholdTuningRisk,
+        preprocessingOutsideCrossValidationRisk,
+        usesCustomCompositeScore,
         usesRandomState,
         usesCrossValidation,
         usesStratify,

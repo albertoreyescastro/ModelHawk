@@ -6,6 +6,24 @@ import path from "path";
 
 export const runtime = "nodejs";
 
+const MAX_PDF_REQUEST_BYTES = 1024 * 1024;
+const PDF_COMPILE_TIMEOUT_MS = 20_000;
+const MAX_PROCESS_OUTPUT_BYTES = 256 * 1024;
+const MAX_CONCURRENT_PDF_JOBS = 2;
+let activePdfJobs = 0;
+
+function hasValidScores(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const scores = value as Record<string, unknown>;
+  return ["leakageRisk", "metricQuality", "reproducibility", "portfolioReadiness"].every(
+    (key) =>
+      typeof scores[key] === "number" &&
+      Number.isFinite(scores[key]) &&
+      Number(scores[key]) >= 0 &&
+      Number(scores[key]) <= 100
+  );
+}
+
 type Finding = {
   severity: string;
   title: string;
@@ -86,13 +104,39 @@ type PdfAssets = {
 };
 
 export async function POST(request: Request) {
+  if (activePdfJobs >= MAX_CONCURRENT_PDF_JOBS) {
+    return NextResponse.json(
+      { error: "PDF generator is busy. Please retry shortly." },
+      { status: 429, headers: { "Retry-After": "5" } }
+    );
+  }
+
+  activePdfJobs += 1;
   let workDir = "";
 
   try {
-    const rawBody = (await request.json()) as PdfRequestBody;
+    const rawText = await request.text();
+    if (Buffer.byteLength(rawText, "utf8") > MAX_PDF_REQUEST_BYTES) {
+      return NextResponse.json(
+        { error: "PDF request payload is too large." },
+        { status: 413 }
+      );
+    }
+
+    let rawBody: PdfRequestBody;
+    try {
+      rawBody = JSON.parse(rawText) as PdfRequestBody;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
+    }
     const { result, aiNarrative } = normalisePdfRequest(rawBody);
 
-    if (!result?.fileName) {
+    if (
+      !result ||
+      typeof result.fileName !== "string" ||
+      !result.fileName.trim() ||
+      !hasValidScores(result.scores)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -150,13 +194,13 @@ export async function POST(request: Request) {
 
     await runCommand(
       "pdflatex",
-      ["-interaction=nonstopmode", "-halt-on-error", "report.tex"],
+      ["-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", "report.tex"],
       workDir
     );
 
     await runCommand(
       "pdflatex",
-      ["-interaction=nonstopmode", "-halt-on-error", "report.tex"],
+      ["-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", "report.tex"],
       workDir
     );
 
@@ -184,15 +228,14 @@ export async function POST(request: Request) {
     console.error(message);
 
     return NextResponse.json(
-      {
-        error: message.slice(0, 3000),
-      },
+      { error: "PDF generation failed. Check server logs for details." },
       { status: 500 }
     );
   } finally {
     if (workDir) {
       await fs.rm(workDir, { recursive: true, force: true });
     }
+    activePdfJobs = Math.max(0, activePdfJobs - 1);
   }
 }
 
@@ -244,28 +287,48 @@ async function copyFirstExistingAsset(
 
 function runCommand(command: string, args: string[], cwd: string) {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { cwd });
+    const child = spawn(command, args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+
+    const appendBounded = (current: string, chunk: unknown) =>
+      (current + String(chunk)).slice(-MAX_PROCESS_OUTPUT_BYTES);
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(new Error("PDF compilation timed out."));
+    }, PDF_COMPILE_TIMEOUT_MS);
 
     child.stdout.on("data", (data) => {
-      stdout += data.toString();
+      stdout = appendBounded(stdout, data);
     });
 
     child.stderr.on("data", (data) => {
-      stderr += data.toString();
+      stderr = appendBounded(stderr, data);
     });
 
-    child.on("error", (error) => {
-      reject(error);
-    });
+    child.on("error", (error) => finish(error));
 
     child.on("close", (code) => {
       if (code === 0) {
-        resolve();
+        finish();
       } else {
-        reject(
+        finish(
           new Error(
             `pdflatex failed with code ${code}\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`
           )
