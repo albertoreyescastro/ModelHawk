@@ -79,7 +79,7 @@ jobs:
       - name: Verify LaTeX runtime
         run: docker exec modelhawk-ci pdflatex --version
 
-      - name: Exercise audit and PDF endpoints
+      - name: Exercise audit, examiner and PDF endpoints
         shell: bash
         run: |
           set -euo pipefail
@@ -109,9 +109,45 @@ jobs:
 
           if len(audit.get('findings', [])) < 4:
               raise SystemExit('Expected the bundled regression fixture to produce at least four findings')
+          PY
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/modelhawk-audit.json \
+            http://127.0.0.1:3000/api/audit/ai \
+            -o /tmp/modelhawk-ai.json
+
+          python - <<'PY'
+          import json
+
+          with open('/tmp/modelhawk-audit.json', encoding='utf-8') as handle:
+              audit = json.load(handle)
+          with open('/tmp/modelhawk-ai.json', encoding='utf-8') as handle:
+              examiner = json.load(handle)
+
+          if examiner.get('provider') != 'deterministic':
+              raise SystemExit(f"Expected deterministic CI examiner, got {examiner.get('provider')}")
+
+          narrative = examiner.get('aiNarrative')
+          required = {
+              'executiveSummary',
+              'technicalAssessment',
+              'riskInterpretation',
+              'portfolioVerdict',
+              'improvedRecommendations',
+              'suggestedMarkdownCells',
+              'vivaAnswers',
+              'limitations',
+          }
+
+          if not isinstance(narrative, dict) or not required.issubset(narrative):
+              raise SystemExit('Examiner endpoint returned an incomplete controlled narrative')
+
+          if len(narrative.get('vivaAnswers', [])) != len(audit.get('vivaQuestions', [])):
+              raise SystemExit('Examiner did not preserve one answer per deterministic viva question')
 
           with open('/tmp/modelhawk-pdf-payload.json', 'w', encoding='utf-8') as handle:
-              json.dump({'auditResult': audit}, handle)
+              json.dump({'auditResult': audit, 'aiNarrative': narrative}, handle)
           PY
 
           curl --fail --silent --show-error \
@@ -136,6 +172,40 @@ jobs:
 
           print(f'PDF smoke test passed: {len(report)} bytes')
           PY
+
+      - name: Verify invalid API requests fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          printf 'not a notebook' >/tmp/modelhawk-invalid.txt
+          status=$(curl --silent --show-error -o /tmp/modelhawk-invalid-audit.json -w '%{http_code}' \
+            -F "file=@/tmp/modelhawk-invalid.txt;filename=invalid.txt" \
+            http://127.0.0.1:3000/api/audit)
+          test "$status" = "400"
+          grep -q 'Please upload a .ipynb notebook file.' /tmp/modelhawk-invalid-audit.json
+
+          status=$(curl --silent --show-error -o /tmp/modelhawk-invalid-ai.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"fileName":"invalid.ipynb","scores":{"leakageRisk":999,"metricQuality":1,"reproducibility":1,"portfolioReadiness":1}}' \
+            http://127.0.0.1:3000/api/audit/ai)
+          test "$status" = "400"
+
+          status=$(curl --silent --show-error -o /tmp/modelhawk-invalid-pdf.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"fileName":"invalid.ipynb"}' \
+            http://127.0.0.1:3000/api/report/pdf)
+          test "$status" = "400"
+
+      - name: Verify runtime security headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --head http://127.0.0.1:3000/ >/tmp/modelhawk-headers.txt
+          grep -qi '^content-security-policy:' /tmp/modelhawk-headers.txt
+          grep -qi '^strict-transport-security:' /tmp/modelhawk-headers.txt
+          grep -qi '^x-content-type-options: nosniff' /tmp/modelhawk-headers.txt
+          grep -qi '^x-frame-options: DENY' /tmp/modelhawk-headers.txt
 
       - name: Show container logs on failure
         if: failure()

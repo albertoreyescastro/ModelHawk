@@ -166,9 +166,9 @@ export default function DemoPage() {
               </a>
             </div>
             <p className="mt-4 max-w-3xl text-xs leading-5 text-slate-500">
-              The previous sample PDF has been removed from this page because it
-              was generated before the hardened audit rules. A replacement will
-              only be published after it is regenerated from the current engine.
+              PDF reports are generated on demand from the current deterministic
+              audit result, so exported reports stay aligned with the hardened
+              rules used by the live application.
             </p>
           </div>
 
