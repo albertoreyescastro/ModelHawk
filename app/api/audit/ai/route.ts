@@ -63,10 +63,27 @@ type AiNarrative = {
 };
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2:3b";
+const MAX_AI_REQUEST_BYTES = 512 * 1024;
+const GEMINI_TIMEOUT_MS = 20_000;
+const OLLAMA_TIMEOUT_MS = 45_000;
+const MAX_CONCURRENT_AI_REQUESTS = 4;
+let activeAiRequests = 0;
+
+function hasValidScores(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const scores = value as Record<string, unknown>;
+  return ["leakageRisk", "metricQuality", "reproducibility", "portfolioReadiness"].every(
+    (key) =>
+      typeof scores[key] === "number" &&
+      Number.isFinite(scores[key]) &&
+      Number(scores[key]) >= 0 &&
+      Number(scores[key]) <= 100
+  );
+}
 
 type AiProviderResult = {
   candidate: Partial<AiNarrative>;
@@ -76,10 +93,36 @@ type AiProviderResult = {
 };
 
 export async function POST(request: Request) {
-  try {
-    const auditResult = (await request.json()) as AuditResult;
+  if (activeAiRequests >= MAX_CONCURRENT_AI_REQUESTS) {
+    return NextResponse.json(
+      { error: "AI examiner is busy. Please retry shortly." },
+      { status: 429, headers: { "Retry-After": "5" } }
+    );
+  }
 
-    if (!auditResult || !auditResult.fileName || !auditResult.scores) {
+  activeAiRequests += 1;
+  try {
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_AI_REQUEST_BYTES) {
+      return NextResponse.json(
+        { error: "Audit payload is too large." },
+        { status: 413 }
+      );
+    }
+
+    let auditResult: AuditResult;
+    try {
+      auditResult = JSON.parse(rawBody) as AuditResult;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
+    }
+
+    if (
+      !auditResult ||
+      typeof auditResult.fileName !== "string" ||
+      !auditResult.fileName.trim() ||
+      !hasValidScores(auditResult.scores)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -100,6 +143,7 @@ export async function POST(request: Request) {
       provider: providerResult.provider,
       model: providerResult.model,
       warning: providerResult.warning,
+      warnings: providerResult.warning ? [providerResult.warning] : [],
     });
   } catch (error) {
     const message =
@@ -111,11 +155,11 @@ export async function POST(request: Request) {
     console.error(message);
 
     return NextResponse.json(
-      {
-        error: message.slice(0, 3000),
-      },
+      { error: "AI narrative generation failed." },
       { status: 500 }
     );
+  } finally {
+    activeAiRequests = Math.max(0, activeAiRequests - 1);
   }
 }
 
@@ -131,7 +175,7 @@ async function generateAiCandidate(
       const message = getErrorMessage(error);
       console.error("MODELHAWK GEMINI ERROR:");
       console.error(message);
-      warnings.push(`Gemini failed: ${message.slice(0, 500)}`);
+      warnings.push("Gemini provider unavailable; a fallback examiner was used.");
     }
   }
 
@@ -142,7 +186,7 @@ async function generateAiCandidate(
       const message = getErrorMessage(error);
       console.error("MODELHAWK OLLAMA ERROR:");
       console.error(message);
-      warnings.push(`Ollama failed: ${message.slice(0, 500)}`);
+      warnings.push("Ollama provider unavailable; the deterministic examiner was used.");
     }
   }
 
@@ -163,13 +207,15 @@ async function generateWithGemini(
   const prompt = buildAiPrompt(auditResult);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     GEMINI_MODEL
-  )}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  )}:generateContent`;
 
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "x-goog-api-key": GEMINI_API_KEY,
     },
+    signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
     body: JSON.stringify({
       systemInstruction: {
         parts: [{ text: MODELHAWK_AI_INSTRUCTIONS }],
@@ -220,6 +266,7 @@ async function generateWithOllama(
     headers: {
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
     body: JSON.stringify({
       model: OLLAMA_MODEL,
       stream: false,
