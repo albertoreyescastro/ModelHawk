@@ -27,6 +27,7 @@ RUN apt-get update \
       texlive-latex-base \
       texlive-latex-recommended \
       texlive-latex-extra \
+      texlive-plain-generic \
       texlive-fonts-recommended \
       texlive-fonts-extra \
     && rm -rf /var/lib/apt/lists/*
