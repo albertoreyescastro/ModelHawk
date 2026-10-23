@@ -257,9 +257,7 @@ curl http://localhost:3000/api/health
 
 ![ModelHawk audit results](./public/docs/screenshots/03-audit-results.png)
 
-### Demo page
-
-![ModelHawk demo page](./public/docs/screenshots/06-demo-page.png)
+A fresh production screenshot of the current `/demo` page will be added after the hardened sample is deployed.
 
 ---
 
