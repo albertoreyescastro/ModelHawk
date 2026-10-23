@@ -58,7 +58,7 @@ Useful routes:
 - `/upload` — notebook upload workflow
 - `/api/health` — deployment health and revision endpoint
 
-The public instance currently runs on Render's free web-service tier. It can spin down after inactivity, so the first request after an idle period may be noticeably slower. The application itself is containerised and the same Docker image is exercised in CI before merge.
+The public instance currently runs on Render's free web-service tier. It can spin down after inactivity, so the first request after an idle period may be noticeably slower. The application itself is containerised and the same Docker image is exercised in CI before merge. Render is configured to deploy from `main` only after the GitHub checks pass.
 
 The public deployment does not require a hosted AI-provider key. If no external provider is configured, the examiner layer uses the deterministic fallback path.
 
@@ -87,7 +87,7 @@ The audit also flags a medium-severity concern around a custom weighted model-se
 
 These values are taken from the current deterministic `/api/audit` output for the bundled notebook rather than from an older static report.
 
-> The previous sample PDF was generated before these hardened rules were added. It is intentionally not linked from the live demo until a replacement is regenerated from the current engine.
+The obsolete static sample PDF has been retired. Current PDF output is generated on demand from the current audit result through `/api/report/pdf`.
 
 ---
 
@@ -186,15 +186,21 @@ npm run build
 npm audit --omit=dev --audit-level=high
 ```
 
-### Production container smoke test
+### Production container E2E
 
 CI then:
 
 1. builds the real Docker image
-2. starts the container
+2. starts the production container
 3. waits for `/api/health`
-4. verifies `pdflatex` exists inside the runtime image
-5. tears the container down
+4. verifies the LaTeX runtime inside the image
+5. submits the bundled fraud notebook to `/api/audit`
+6. asserts the deterministic regression scores and findings
+7. posts that audit result to `/api/report/pdf`
+8. validates that the response is a complete PDF document
+9. tears the container down
+
+This catches both application regressions and runtime packaging failures. The PDF path is therefore exercised through the same HTTP boundary used by the deployed service rather than being reduced to a `pdflatex --version` check.
 
 Third-party GitHub Actions are pinned to immutable commit SHAs rather than floating tags.
 
@@ -245,6 +251,8 @@ curl http://localhost:3000/api/health
 
 ## Screenshots
 
+All three screenshots below were captured from the current public deployment at a 1440 × 1000 desktop viewport.
+
 ### Landing page
 
 ![ModelHawk landing page](./public/docs/screenshots/01-landing-page.png)
@@ -253,11 +261,9 @@ curl http://localhost:3000/api/health
 
 ![ModelHawk upload page](./public/docs/screenshots/02-upload-page.png)
 
-### Static audit results
+### Live sample audit
 
-![ModelHawk audit results](./public/docs/screenshots/03-audit-results.png)
-
-A fresh production screenshot of the current `/demo` page will be added after the hardened sample is deployed.
+![ModelHawk live sample audit](./public/docs/screenshots/03-audit-results.png)
 
 ---
 
