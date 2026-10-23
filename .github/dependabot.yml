@@ -8,6 +8,10 @@ updates:
       time: "07:00"
       timezone: Europe/London
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     groups:
       production-dependencies:
         dependency-type: production
@@ -35,3 +39,7 @@ updates:
       time: "07:30"
       timezone: Europe/London
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - version-update:semver-major
