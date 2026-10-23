@@ -547,21 +547,6 @@ function buildControlledAiNarrative(
   };
 }
 
-function selectSafeAiText(
-  value: unknown,
-  deterministicFallback: string,
-  minLength: number
-) {
-  if (typeof value !== "string") return deterministicFallback;
-
-  const text = value.trim();
-
-  if (text.length < minLength) return deterministicFallback;
-  if (!isSafeNarrativeText(text)) return deterministicFallback;
-
-  return text;
-}
-
 function isSafeNarrativeText(text: string) {
   const lower = text.toLowerCase();
 

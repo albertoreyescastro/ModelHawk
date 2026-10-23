@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 const checks = [
   {
@@ -80,7 +81,7 @@ export default function Home() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_right,#1677FF33,transparent_35%),radial-gradient(circle_at_20%_20%,#5EEBFF22,transparent_30%),linear-gradient(180deg,#020817_0%,#061126_50%,#020817_100%)]" />
 
       <nav className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-6">
-        <a href="/" className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-lg shadow-blue-500/25">
             <Image
               src="/modelhawk-icon.png"
@@ -100,7 +101,7 @@ export default function Home() {
               ML Audit
             </p>
           </div>
-        </a>
+        </Link>
 
         <div className="hidden items-center gap-8 text-sm text-slate-300 md:flex">
           <a href="#features" className="transition hover:text-white">
