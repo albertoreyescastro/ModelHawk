@@ -27,8 +27,10 @@ RUN apt-get update \
       texlive-latex-base \
       texlive-latex-recommended \
       texlive-latex-extra \
+      texlive-plain-generic \
       texlive-fonts-recommended \
       texlive-fonts-extra \
+      tex-gyre \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system --gid 1001 nodejs \

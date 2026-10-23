@@ -243,7 +243,7 @@ export default function UploadPage() {
 
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
             ModelHawk reads your notebook, detects the project profile, applies
-            technical audit checks and then uses a AI examiner layer to
+            technical audit checks and then uses an AI examiner layer to
             generate richer project-specific explanations.
           </p>
 

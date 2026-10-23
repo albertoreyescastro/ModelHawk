@@ -79,6 +79,64 @@ jobs:
       - name: Verify LaTeX runtime
         run: docker exec modelhawk-ci pdflatex --version
 
+      - name: Exercise audit and PDF endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --silent --show-error \
+            -F "file=@public/examples/credit_card_fraud_detection.ipynb;filename=credit_card_fraud_detection.ipynb" \
+            http://127.0.0.1:3000/api/audit \
+            -o /tmp/modelhawk-audit.json
+
+          python - <<'PY'
+          import json
+
+          with open('/tmp/modelhawk-audit.json', encoding='utf-8') as handle:
+              audit = json.load(handle)
+
+          expected_scores = {
+              'leakageRisk': 75,
+              'metricQuality': 76,
+              'reproducibility': 90,
+              'portfolioReadiness': 79,
+          }
+
+          if audit.get('scores') != expected_scores:
+              raise SystemExit(
+                  f"Unexpected bundled-fixture scores: {audit.get('scores')} != {expected_scores}"
+              )
+
+          if len(audit.get('findings', [])) < 4:
+              raise SystemExit('Expected the bundled regression fixture to produce at least four findings')
+
+          with open('/tmp/modelhawk-pdf-payload.json', 'w', encoding='utf-8') as handle:
+              json.dump({'auditResult': audit}, handle)
+          PY
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/modelhawk-pdf-payload.json \
+            http://127.0.0.1:3000/api/report/pdf \
+            -o /tmp/modelhawk-report.pdf
+
+          python - <<'PY'
+          from pathlib import Path
+
+          report = Path('/tmp/modelhawk-report.pdf').read_bytes()
+
+          if not report.startswith(b'%PDF-'):
+              raise SystemExit('PDF route did not return a PDF document')
+
+          if b'%%EOF' not in report[-1024:]:
+              raise SystemExit('PDF route returned a truncated PDF document')
+
+          if len(report) < 10_000:
+              raise SystemExit(f'PDF output is unexpectedly small: {len(report)} bytes')
+
+          print(f'PDF smoke test passed: {len(report)} bytes')
+          PY
+
       - name: Show container logs on failure
         if: failure()
         run: docker logs modelhawk-ci || true
