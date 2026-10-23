@@ -1,0 +1,67 @@
+name: One-off screenshot refresh
+
+on:
+  push:
+    branches:
+      - polish/final-consistency-20261023
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: polish/final-consistency-20261023
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Build and start production app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          nohup npm start >/tmp/modelhawk-screenshot-server.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/modelhawk-screenshot-server.log
+          exit 1
+
+      - name: Capture production pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1440,1000 \
+            --screenshot=public/docs/screenshots/01-landing-page.png http://127.0.0.1:3000/
+          "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1440,1000 \
+            --screenshot=public/docs/screenshots/02-upload-page.png http://127.0.0.1:3000/upload
+          "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1440,1000 \
+            --screenshot=public/docs/screenshots/03-audit-results.png http://127.0.0.1:3000/demo
+          file public/docs/screenshots/*.png
+
+      - name: Commit refreshed screenshots if changed
+        shell: bash
+        run: |
+          git add public/docs/screenshots/01-landing-page.png public/docs/screenshots/02-upload-page.png public/docs/screenshots/03-audit-results.png
+          if git diff --cached --quiet; then
+            echo "Screenshots already match this branch."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh final production screenshots"
+          git push origin HEAD:polish/final-consistency-20261023
