@@ -1,0 +1,2 @@
+# Generated/bundled notebook fixtures are test data, not the implementation language.
+public/examples/*.ipynb linguist-vendored
